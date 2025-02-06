@@ -1,0 +1,77 @@
+// Backend: server.js (Node.js + Express)
+const express = require('express');
+const mysql = require('mysql2');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const cors = require('cors');
+const path = require('path');
+require('dotenv').config();
+
+const app = express();
+app.use(express.json());
+app.use(cors());
+
+const db = mysql.createConnection({
+  host: 'localhost',
+  user: 'root',
+  password: '',
+  database: 'user_auth'
+});
+
+db.connect(err => {
+  if (err) throw err;
+  console.log('MySQL Connected...');
+});
+
+app.post('/signup', async (req, res) => {
+  const { email, password } = req.body;
+  const hashedPassword = await bcrypt.hash(password, 10);
+  const sql = 'INSERT INTO users (email, password) VALUES (?, ?)';
+  db.query(sql, [email, hashedPassword], (err, result) => {
+    if (err) return res.status(500).json({ message: 'User already exists' });
+    res.status(201).json({ message: 'User registered successfully' });
+  });
+});
+
+app.post('/login', (req, res) => {
+  const { email, password } = req.body;
+  const sql = 'SELECT * FROM users WHERE email = ?';
+  db.query(sql, [email], async (err, results) => {
+    if (err || results.length === 0) return res.status(401).json({ message: 'Invalid credentials' });
+    const user = results[0];
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
+    const token = jwt.sign({ id: user.id }, 'secret_key', { expiresIn: '1h' });
+    res.json({ token });
+  });
+});
+
+// Serve frontend
+app.use(express.static(path.join(__dirname, 'frontend/build')));
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'frontend/build', 'index.html'));
+});
+
+app.listen(5000, () => console.log('Server running on port 5000'));
+
+// Frontend: App.js (React Component with Router)
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import Login from './Login';
+import Signup from './Signup';
+import Dashboard from './Dashboard';
+
+function App() {
+  return (
+    <Router>
+      <Routes>
+        <Route path="/" element={<Login />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<Signup />} />
+        <Route path="/dashboard" element={<Dashboard />} />
+      </Routes>
+    </Router>
+  );
+}
+
+export default App;
